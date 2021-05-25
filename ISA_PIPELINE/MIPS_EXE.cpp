@@ -184,25 +184,25 @@ void update_fetch(struct Fetch_Decode_latch& in, struct Fetch_Decode_latch& out)
         out.inst = in.inst;
         out.pc_value = in.pc_value;
         decode_first = 0;
-        printf("update fetch %d 0x%x \n", in.pc_value, in.inst);
+        printf("update fetch %d 0x%x \n\n", in.pc_value, in.inst);
         return;
     }
     else {
-        printf("skip fetch %d \n", in.pc_value);
+        printf("skip fetch %d \n\n", in.pc_value);
         return;
     }
 }
 int fetch_ins(struct Fetch_Decode_latch& in) {
     if (pc == 0xffffffff) {
         in.valid = 0;
-        printf(" end after 3 clock found in %d 0x%x \n",in.pc_value,in.inst);
+        printf(" end after 3 clock found in %d 0x%x \n\n",in.pc_value,in.inst);
         return -1;
     }
         in.valid = 1;
         in.pc_value = pc;
         in.inst = ch[pc / 4];
         pc = pc + 4;
-        printf("fetch complete %d 0x%x \n", in.pc_value, in.inst);
+        printf("fetch complete %d 0x%x \n\n", in.pc_value, in.inst);
         return 1;
 }
 void update_decode(struct Decode_Execute_latch& in, struct Decode_Execute_latch& out) {
@@ -219,11 +219,11 @@ void update_decode(struct Decode_Execute_latch& in, struct Decode_Execute_latch&
         out.rs = in.rs;
         out.shamt = in.shamt;
         execute_first = 0;
-        printf("decode update complete %d \n", in.pc_value);
+        printf("decode update complete %d \n\n", in.pc_value);
         return;
     }
     else {
-        printf("decode update failed %d \n", in.pc_value);
+        printf("decode update failed %d \n\n", in.pc_value);
         return;
     }
 }
@@ -236,47 +236,47 @@ int decode_ins(struct Fetch_Decode_latch& out, struct Decode_Execute_latch& in) 
     in.valid = 1;
     // value setting
     in.pc_value = out.pc_value;
-    unsigned int opcode = cal_opc(out.inst);
+    in.opcode = cal_opc(out.inst);
     in.rs = cal_rs(out.inst);
     in.rt = cal_rt(out.inst);
     unsigned int rd = cal_rd(out.inst);
     in.shamt = cal_shamt(out.inst);
     int funct = 0xff;
-    if (opcode == 0) funct = cal_func(out.inst);
+    if (in.opcode == 0) funct = cal_func(out.inst);
     else funct = 0xff;
-    if ((opcode == 0xc) || (opcode == 0xd)) in.imm = cal_imm(out.inst, false);
+    if ((in.opcode == 0xc) || (in.opcode == 0xd)) in.imm = cal_imm(out.inst, false);
     else in.imm = cal_imm(out.inst, true);
-    printf("op: %d, rs: %d rt: %d rd: %d shamt: %d funct: %d imm: %d \n", opcode, in.rs, in.rt, rd, in.shamt, funct, in.imm);
+    printf("op: %d, rs: %d rt: %d rd: %d shamt: %d funct: %d imm: %d \n", in.opcode, in.rs, in.rt, rd, in.shamt, funct, in.imm);
     // control signal setting
-    if (opcode == 0x0)  in.cs.regDst = 1; //RegDest
+    if (in.opcode == 0x0)  in.cs.regDst = 1; //RegDest
     else in.cs.regDst = 0;
     { // ALUop
-        if ((funct == 0x20) || (funct == 0x21) || (opcode == 0x8) || (opcode == 0x9) || (opcode == 0x30) || (opcode == 0x23) || (opcode == 0x2b)) in.cs.aluop = 0; // add
+        if ((funct == 0x20) || (funct == 0x21) || (in.opcode == 0x8) || (in.opcode == 0x9) || (in.opcode == 0x30) || (in.opcode == 0x23) || (in.opcode == 0x2b)) in.cs.aluop = 0; // add
         else if ((funct == 0x22) || (funct == 0x23)) in.cs.aluop = 1; // sub
-        else if ((funct == 0x24) || (opcode == 0xc)) in.cs.aluop = 2; // and
-        else if (opcode == 0x4) in.cs.aluop = 3; // beq
-        else if (opcode == 0x5) in.cs.aluop = 4; // bne
+        else if ((funct == 0x24) || (in.opcode == 0xc)) in.cs.aluop = 2; // and
+        else if (in.opcode == 0x4) in.cs.aluop = 3; // beq
+        else if (in.opcode == 0x5) in.cs.aluop = 4; // bne
         else if ((funct == 0x27)) in.cs.aluop = 5; // Nor
-        else if ((funct == 0x25) || (opcode == 0xd)) in.cs.aluop = 6; // or
-        else if ((funct == 0x2a) || (funct == 0x2b) || (opcode == 0x0a) || (opcode == 0x0b)) in.cs.aluop = 7;// slt
+        else if ((funct == 0x25) || (in.opcode == 0xd)) in.cs.aluop = 6; // or
+        else if ((funct == 0x2a) || (funct == 0x2b) || (in.opcode == 0x0a) || (in.opcode == 0x0b)) in.cs.aluop = 7;// slt
         else if (funct == 0x0) in.cs.aluop = 8;// shift left
         else if (funct == 0x2) in.cs.aluop = 9; // shift right
         else in.cs.aluop = 10; // DON'T CARE
     }
-    if ((opcode == 0x0) || (opcode == 0x04) || (opcode == 0x05)) in.cs.alusrc = 0; // AluSrc
+    if ((in.opcode == 0x0) || (in.opcode == 0x04) || (in.opcode == 0x05)) in.cs.alusrc = 0; // AluSrc
     else in.cs.alusrc = 1;
-    if ((opcode == 0x02) || (opcode == 0x03) || (funct == 0x08) || (opcode == 0x04) || (opcode == 0x05) || (opcode == 0x2b)) in.cs.regWrite = 0; //RegWrite
+    if ((in.opcode == 0x02) || (in.opcode == 0x03) || (funct == 0x08) || (in.opcode == 0x04) || (in.opcode == 0x05) || (in.opcode == 0x2b)) in.cs.regWrite = 0; //RegWrite
     else in.cs.regWrite = 1;
-    if (opcode == 0x2b) in.cs.memWrite = 1; // MemWrite
+    if (in.opcode == 0x2b) in.cs.memWrite = 1; // MemWrite
     else in.cs.memWrite = 0;
-    if ((opcode == 0x30) || (opcode == 0x23)) {
+    if ((in.opcode == 0x30) || (in.opcode == 0x23)) {
         in.cs.memToReg = 1;   //MemRead, MemToReg
         n_Mem_ins++;
     }
     else in.cs.memToReg = 0;
-    if ((opcode == 0x04) || (opcode == 0x05)) in.cs.branchJ = 1; // Branch
+    if ((in.opcode == 0x04) || (in.opcode == 0x05)) in.cs.branchJ = 1; // Branch
     else in.cs.branchJ = 0;
-    if ((opcode == 0x02) || (opcode == 0x03)) in.cs.Jump = 1; // Jump
+    if ((in.opcode == 0x02) || (in.opcode == 0x03)) in.cs.Jump = 1; // Jump
     else in.cs.Jump = 0;
     if (funct == 0x08) in.cs.JumpR = 1;
     else in.cs.JumpR = 0;
@@ -288,22 +288,22 @@ int decode_ins(struct Fetch_Decode_latch& out, struct Decode_Execute_latch& in) 
     in.MemWriteData = R[in.rt];
     printf("data1: %x data2: %d writebacknum: %d memwritedata: %x \n", in.ReadData1, in.ReadData2, in.WriteBackNum, in.MemWriteData);
     // Unconditional jump
-    if (opcode == 0x2) {
+    if (in.opcode == 0x2) {
         int a = cal_jump(out.pc_value, out.inst);
         if (a != (pc-4)) {
             out.valid = 0;
             pc = a;
         }
     }
-    else if (opcode == 0x3) {
+    else if (in.opcode == 0x3) {
         R[31] = out.pc_value + 8;
         int a = cal_jump(out.pc_value, out.inst);
         if (a != (pc - 4)) {
-            out.invalid = 1;
+            out.valid = 0;
             pc = a;
         }
     }
-    else if ((funct == 0x8) && (opcode == 0x0)) {
+    else if ((funct == 0x8) && (in.opcode == 0x0)) {
         int a = R[in.rs];
         if (a != (pc - 4)) {
             out.valid = 0;
@@ -345,7 +345,7 @@ int execute_ins(struct Fetch_Decode_latch& din,struct Decode_Execute_latch& out,
     if ((out.cs.branchJ == 1) && (in.AluResult == 1)) {
         int BAddr = out.pc_value + 4 + (out.imm << 2);
         if (BAddr != (din.pc_value)) {
-            din.valid = 0;
+            din.valid = 0; 
             out.valid = 0;
             pc = BAddr;
         }
@@ -437,16 +437,15 @@ int main() {
     // 프로그램 시작
     init_cpu(); // 전역 함수 초기화 
     memset(a, 0, sizeof(a));
-    memset(b, 0, sizeof(a));
-    memset(c, 0, sizeof(a));
-    memset(d, 0, sizeof(a));
+    memset(b, 0, sizeof(b));
+    memset(c, 0, sizeof(c));
+    memset(d, 0, sizeof(d));
     do {
         clock++;
 
         update_fetch(a[0], a[1]);
         int quit = fetch_ins(a[0]);
-        if (quit < 0) break;
-            // keep++; // pc가 종료 값이면 keep +1, 3번 더 돌리고 종료
+        if (quit < 0) keep++; // pc가 종료 값이면 keep +1, 3번 더 돌리고 종료
 
         update_decode(b[0], b[1]);
         decode_ins(a[1],b[0]);
