@@ -16,6 +16,7 @@ struct control_sig {
     unsigned int alusrc;
     unsigned int memRead, memWrite, memToReg, regWrite, regDst;
     unsigned int branchJ, Jump, JumpR;
+    unsigned int rsUse, rtUse;
 };
 struct Fetch_Decode_latch {
     int valid;
@@ -29,7 +30,9 @@ struct Decode_Execute_latch {
     int ReadData1;
     int ReadData2;
     int rs; // data1 reg num
+    int rd;
     int rt;
+    int funct;
     int MemWriteData; 
     int WriteBackNum;
     int imm;
@@ -41,7 +44,9 @@ struct Execute_MemAccess_latch {
     int pc_value;
     int AluResult;
     int rs;
+    int rd;
     int rt;
+    int funct;
     int MemWriteData;
     int WriteBackNum;
     struct control_sig cs;
@@ -218,7 +223,9 @@ void update_decode(struct Decode_Execute_latch& in, struct Decode_Execute_latch&
         out.cs = in.cs;
         out.imm = in.imm;
         out.rt = in.rt;
+        out.rd = in.rd;
         out.rs = in.rs;
+        out.funct = in.funct;
         out.shamt = in.shamt;
         execute_first = 0;
         printf("decode update complete %d \n\n", in.pc_value);
@@ -230,44 +237,46 @@ void update_decode(struct Decode_Execute_latch& in, struct Decode_Execute_latch&
     }
 }
 int decode_ins(struct Fetch_Decode_latch& out, struct Decode_Execute_latch& in) {
+
     out.valid = 1;
     if (decode_first == 1) {
         printf("skip decode %d \n\n", out.pc_value);
         return 1;
     }
     in.valid = 1;
+
     // value setting
     in.pc_value = out.pc_value;
     in.opcode = cal_opc(out.inst);
     in.rs = cal_rs(out.inst);
     in.rt = cal_rt(out.inst);
-    unsigned int rd = cal_rd(out.inst);
+    in.rd = cal_rd(out.inst);
     in.shamt = cal_shamt(out.inst);
-    int funct = 0xff;
-    if (in.opcode == 0) funct = cal_func(out.inst);
-    else funct = 0xff;
+    if (in.opcode == 0) in.funct = cal_func(out.inst);
+    else in.funct = 0xff;
     if ((in.opcode == 0xc) || (in.opcode == 0xd)) in.imm = cal_imm(out.inst, false);
     else in.imm = cal_imm(out.inst, true);
-    printf("op: %d, rs: %d rt: %d rd: %d shamt: %d funct: %d imm: %d \n", in.opcode, in.rs, in.rt, rd, in.shamt, funct, in.imm);
+    printf("op: %d, rs: %d rt: %d rd: %d shamt: %d funct: %d imm: %d \n", in.opcode, in.rs, in.rt, in.rd, in.shamt, in.funct, in.imm);
+
     // control signal setting
     if (in.opcode == 0x0)  in.cs.regDst = 1; //RegDest
     else in.cs.regDst = 0;
     { // ALUop
-        if ((funct == 0x20) || (funct == 0x21) || (in.opcode == 0x8) || (in.opcode == 0x9) || (in.opcode == 0x30) || (in.opcode == 0x23) || (in.opcode == 0x2b)) in.cs.aluop = 0; // add
-        else if ((funct == 0x22) || (funct == 0x23)) in.cs.aluop = 1; // sub
-        else if ((funct == 0x24) || (in.opcode == 0xc)) in.cs.aluop = 2; // and
+        if ((in.funct == 0x20) || (in.funct == 0x21) || (in.opcode == 0x8) || (in.opcode == 0x9) || (in.opcode == 0x30) || (in.opcode == 0x23) || (in.opcode == 0x2b)) in.cs.aluop = 0; // add
+        else if ((in.funct == 0x22) || (in.funct == 0x23)) in.cs.aluop = 1; // sub
+        else if ((in.funct == 0x24) || (in.opcode == 0xc)) in.cs.aluop = 2; // and
         else if (in.opcode == 0x4) in.cs.aluop = 3; // beq
         else if (in.opcode == 0x5) in.cs.aluop = 4; // bne
-        else if ((funct == 0x27)) in.cs.aluop = 5; // Nor
-        else if ((funct == 0x25) || (in.opcode == 0xd)) in.cs.aluop = 6; // or
-        else if ((funct == 0x2a) || (funct == 0x2b) || (in.opcode == 0x0a) || (in.opcode == 0x0b)) in.cs.aluop = 7;// slt
-        else if (funct == 0x0) in.cs.aluop = 8;// shift left
-        else if (funct == 0x2) in.cs.aluop = 9; // shift right
+        else if ((in.funct == 0x27)) in.cs.aluop = 5; // Nor
+        else if ((in.funct == 0x25) || (in.opcode == 0xd)) in.cs.aluop = 6; // or
+        else if ((in.funct == 0x2a) || (in.funct == 0x2b) || (in.opcode == 0x0a) || (in.opcode == 0x0b)) in.cs.aluop = 7;// slt
+        else if (in.funct == 0x0) in.cs.aluop = 8;// shift left
+        else if (in.funct == 0x2) in.cs.aluop = 9; // shift right
         else in.cs.aluop = 10; // DON'T CARE
     }
     if ((in.opcode == 0x0) || (in.opcode == 0x04) || (in.opcode == 0x05)) in.cs.alusrc = 0; // AluSrc
     else in.cs.alusrc = 1;
-    if ((in.opcode == 0x02) || (in.opcode == 0x03) || (funct == 0x08) || (in.opcode == 0x04) || (in.opcode == 0x05) || (in.opcode == 0x2b)) in.cs.regWrite = 0; //RegWrite
+    if ((in.opcode == 0x02) || (in.opcode == 0x03) || (in.funct == 0x08) || (in.opcode == 0x04) || (in.opcode == 0x05) || (in.opcode == 0x2b)) in.cs.regWrite = 0; //RegWrite
     else in.cs.regWrite = 1;
     if (in.opcode == 0x2b) in.cs.memWrite = 1; // MemWrite
     else in.cs.memWrite = 0;
@@ -280,15 +289,20 @@ int decode_ins(struct Fetch_Decode_latch& out, struct Decode_Execute_latch& in) 
     else in.cs.branchJ = 0;
     if ((in.opcode == 0x02) || (in.opcode == 0x03)) in.cs.Jump = 1; // Jump
     else in.cs.Jump = 0;
-    if (funct == 0x08) in.cs.JumpR = 1;
+    if (in.funct == 0x08) in.cs.JumpR = 1;
     else in.cs.JumpR = 0;
+    if ((in.opcode == 0x2) || (in.opcode == 0x3) || (in.opcode == 0xf) || (in.funct == 0x00) || (in.funct == 0x02)) in.cs.rsUse = 0;
+    else in.cs.rsUse = 1;
+    if ((in.opcode == 0x2) || (in.opcode == 0x3) || (in.funct == 0x08)) in.cs.rtUse = 0;
+    else in.cs.rtUse = 1;
 
     //Register value move
     in.ReadData1 = R[in.rs];
     in.ReadData2 = mux(R[in.rt], in.imm, in.cs.alusrc);
-    in.WriteBackNum = mux(in.rt, rd, in.cs.regDst);
+    in.WriteBackNum = mux(in.rt, in.rd, in.cs.regDst);
     in.MemWriteData = R[in.rt];
     printf("data1: %x data2: %d writebacknum: %d memwritedata: %x \n", in.ReadData1, in.ReadData2, in.WriteBackNum, in.MemWriteData);
+
     // Unconditional jump
     if (in.opcode == 0x2) {
         int a = cal_jump(out.pc_value, out.inst);
@@ -312,7 +326,7 @@ int decode_ins(struct Fetch_Decode_latch& out, struct Decode_Execute_latch& in) 
             pc = a;
         }
     }
-    else if ((funct == 0x8) && (in.opcode == 0x0)) {
+    else if ((in.funct == 0x8) && (in.opcode == 0x0)) {
         int a = R[in.rs];
         if (a != (pc - 4)) {
             memset(&out, 0, sizeof(out));
@@ -331,6 +345,8 @@ void update_Execute(struct Execute_MemAccess_latch& in, struct Execute_MemAccess
         out.AluResult = in.AluResult;
         out.rs = in.rs;
         out.rt = in.rt;
+        out.rd = in.rd;
+        out.funct = in.funct;
         out.MemWriteData = in.MemWriteData;
         out.WriteBackNum = in.WriteBackNum;
         out.cs = in.cs;
@@ -360,9 +376,23 @@ int execute_ins(struct Fetch_Decode_latch& dout,struct Decode_Execute_latch& din
     in.WriteBackNum = out.WriteBackNum;
     in.rs = out.rs;
     in.rt = out.rt;
+    in.funct = out.funct;
     in.pc_value = out.pc_value;
 
-    //branch
+    // data dependency check
+    if ((out.cs.regWrite == 1) && (out.WriteBackNum == din.rs) && (out.cs.rsUse == 1)) {
+        din.rs = in.AluResult;
+        din.ReadData1 = R[din.rs];
+        if ((din.funct == 0x8) && (din.opcode == 0x0)) pc = R[din.rs]; // register jump case update.
+    }
+    else if ((out.cs.regWrite == 1) && (out.WriteBackNum == din.rt) && (out.cs.rtUse == 1)) {
+        din.rt = in.AluResult;
+        if (din.cs.alusrc == 0) din.ReadData2 = R[din.rt];
+        if (din.cs.regDst == 0) din.WriteBackNum = din.rt;
+        din.MemWriteData = R[din.rt];
+    }
+
+    // branch
     if ((out.cs.branchJ == 1) && (in.AluResult == 1)) {
         int BAddr = out.pc_value + 4 + (out.imm << 2);
         if (BAddr != (din.pc_value)) {
