@@ -180,7 +180,7 @@ void init_cpu() {
     R[29] = 0x200000;   // STACK POINTER
 }
 void update_fetch(struct Fetch_Decode_latch& in, struct Fetch_Decode_latch& out) {
-    if (in.valid == 1) {
+    if ((in.valid == 1)&&(out.valid == 1)) {
         out.inst = in.inst;
         out.pc_value = in.pc_value;
         decode_first = 0;
@@ -188,6 +188,7 @@ void update_fetch(struct Fetch_Decode_latch& in, struct Fetch_Decode_latch& out)
         return;
     }
     else {
+        out.valid = 1;
         printf("skip fetch %d \n\n", in.pc_value);
         return;
     }
@@ -195,6 +196,7 @@ void update_fetch(struct Fetch_Decode_latch& in, struct Fetch_Decode_latch& out)
 int fetch_ins(struct Fetch_Decode_latch& in) {
     if (pc == 0xffffffff) {
         in.valid = 0;
+        memset(&in, 0, sizeof(in));
         printf(" end after 3 clock found in %d 0x%x \n\n",in.pc_value,in.inst);
         return -1;
     }
@@ -230,7 +232,7 @@ void update_decode(struct Decode_Execute_latch& in, struct Decode_Execute_latch&
 int decode_ins(struct Fetch_Decode_latch& out, struct Decode_Execute_latch& in) {
     out.valid = 1;
     if (decode_first == 1) {
-        printf("skip decode %d \n", out.pc_value);
+        printf("skip decode %d \n\n", out.pc_value);
         return 1;
     }
     in.valid = 1;
@@ -291,7 +293,10 @@ int decode_ins(struct Fetch_Decode_latch& out, struct Decode_Execute_latch& in) 
     if (in.opcode == 0x2) {
         int a = cal_jump(out.pc_value, out.inst);
         if (a != (pc-4)) {
-            out.valid = 0;
+            memset(&out, 0, sizeof(out));
+            out.valid = 0; // fetch update 실행 금지
+            decode_first = 1; // decode 실행 금지
+            printf("Jump prediction is failed \n\n");
             pc = a;
         }
     }
@@ -299,18 +304,25 @@ int decode_ins(struct Fetch_Decode_latch& out, struct Decode_Execute_latch& in) 
         R[31] = out.pc_value + 8;
         int a = cal_jump(out.pc_value, out.inst);
         if (a != (pc - 4)) {
-            out.valid = 0;
+
+            memset(&out, 0, sizeof(out));
+            out.valid = 0; // fetch update 실행 금지
+            decode_first = 1; // decode 실행 금지
+            printf("Jump prediction is failed \n\n");
             pc = a;
         }
     }
     else if ((funct == 0x8) && (in.opcode == 0x0)) {
         int a = R[in.rs];
         if (a != (pc - 4)) {
-            out.valid = 0;
+            memset(&out, 0, sizeof(out));
+            out.valid = 0; // fetch update 실행 금지
+            decode_first = 1; // decode 실행 금지
+            printf("Jump prediction is failed \n\n");
             pc = a;
         }
     }
-    printf("decode complete %d \n",out.pc_value);
+    printf("decode complete %d \n\n",out.pc_value);
     return 1;
 }
 void update_Execute(struct Execute_MemAccess_latch& in, struct Execute_MemAccess_latch& out) {
@@ -323,32 +335,25 @@ void update_Execute(struct Execute_MemAccess_latch& in, struct Execute_MemAccess
         out.WriteBackNum = in.WriteBackNum;
         out.cs = in.cs;
         memaccess_first = 0;
-        printf("execute update complete %d \n", out.pc_value);
+        printf("execute update complete %d \n\n", out.pc_value);
         return;
     }
     else {
-        printf("execute update failed %d \n", out.pc_value);
+        printf("execute update failed %d \n\n", out.pc_value);
         return;
     }
 }
-int execute_ins(struct Fetch_Decode_latch& din,struct Decode_Execute_latch& out,struct Execute_MemAccess_latch& in) {
+int execute_ins(struct Fetch_Decode_latch& dout,struct Decode_Execute_latch& din,struct Decode_Execute_latch& out,struct Execute_MemAccess_latch& in) {
     out.valid = 1;
     if (execute_first == 1) {
-        printf("skip execute %d \n", out.pc_value);
+        printf("skip execute %d \n\n", out.pc_value);
         return 1;
     }
     in.valid = 1;
+
     in.AluResult = op_ALU(out.ReadData1, out.ReadData2, out.shamt , out.cs.aluop);
     if (out.opcode == 0x0f) {
         in.AluResult = out.imm << 16; // load upper imm
-    }
-    if ((out.cs.branchJ == 1) && (in.AluResult == 1)) {
-        int BAddr = out.pc_value + 4 + (out.imm << 2);
-        if (BAddr != (din.pc_value)) {
-            din.valid = 0; 
-            out.valid = 0;
-            pc = BAddr;
-        }
     }
     in.cs = out.cs;
     in.MemWriteData = out.MemWriteData;
@@ -356,7 +361,21 @@ int execute_ins(struct Fetch_Decode_latch& din,struct Decode_Execute_latch& out,
     in.rs = out.rs;
     in.rt = out.rt;
     in.pc_value = out.pc_value;
-    printf("alu result: %d memwritedata: %d , writebacknum:%d rs: %d rt: %d pc value: %d \n", in.AluResult, in.MemWriteData, in.WriteBackNum, in.rs, in.rt, in.pc_value);
+
+    //branch
+    if ((out.cs.branchJ == 1) && (in.AluResult == 1)) {
+        int BAddr = out.pc_value + 4 + (out.imm << 2);
+        if (BAddr != (din.pc_value)) {
+            memset(&dout, 0, sizeof(dout));
+            memset(&out, 0, sizeof(out));
+            dout.valid = 0;
+            out.valid = 0;
+            pc = BAddr;
+            printf("branch prediction is failed \n\n");
+        }
+    }
+
+    printf("alu result: %d memwritedata: %d , writebacknum:%d rs: %d rt: %d pc value: %d \n\n", in.AluResult, in.MemWriteData, in.WriteBackNum, in.rs, in.rt, in.pc_value);
     return 1;
 }
 void update_MemAccess(struct MemAccess_WriteBack_latch& in, struct MemAccess_WriteBack_latch& out) {
@@ -366,18 +385,18 @@ void update_MemAccess(struct MemAccess_WriteBack_latch& in, struct MemAccess_Wri
         out.WriteBackNum = in.WriteBackNum;
         out.cs= in.cs;
         writeback_first = 0;
-        printf("memaccess update complete %d \n", out.pc_value);
+        printf("memaccess update complete %d \n\n", out.pc_value);
         return;
     }
     else {
-        printf("memaccess update failed %d \n", out.pc_value);
+        printf("memaccess update failed %d \n\n", out.pc_value);
         return;
     }
 }
 int memAccess_ins(struct Execute_MemAccess_latch& out, struct MemAccess_WriteBack_latch& in) {
     out.valid = 1;
     if (memaccess_first == 1) {
-        printf("skip memaccess %d \n", out.pc_value);
+        printf("skip memaccess %d \n\n", out.pc_value);
         return 1;
     }
     in.valid = 1;
@@ -390,23 +409,23 @@ int memAccess_ins(struct Execute_MemAccess_latch& out, struct MemAccess_WriteBac
     in.cs = out.cs;
     in.pc_value = out.pc_value;
     in.WriteBackNum = out.WriteBackNum;
-    printf("data: %d pc_value: %d writebacknum: %d \n", in.Data, in.pc_value, in.WriteBackNum);
+    printf("data: %d pc_value: %d writebacknum: %d \n\n", in.Data, in.pc_value, in.WriteBackNum);
     return 1;
 }
 
 int writeBack_ins(struct MemAccess_WriteBack_latch& out) {
     out.valid = 1;
     if (writeback_first == 1) {
-        printf("skip writeback %d \n", out.pc_value);
+        printf("skip writeback %d \n\n", out.pc_value);
         return 1;
     }
     if (out.cs.regWrite == 1) {
         R[out.WriteBackNum] = out.Data;
         printf("changed state -> R[%d] = %x\n", out.WriteBackNum, out.Data);
-        printf("complete writeback %d \n", out.pc_value);
+        printf("complete writeback %d \n\n", out.pc_value);
     }
     else {
-        printf("complete writeback %d \n", out.pc_value);
+        printf("complete writeback %d \n\n", out.pc_value);
     }
     return 1;
 }
@@ -421,7 +440,7 @@ int main() {
     int keep = 0;
     int clock = 0;
     // 인스트럭션 -> 메모리 입력
-    if ((in = fopen("simple2.bin", "rb")) == NULL) {  // 파일 오픈
+    if ((in = fopen("simple.bin", "rb")) == NULL) {  // 파일 오픈
         fputs("파일이 존재하지 않습니다", stderr);
         return -1;
     }
@@ -451,7 +470,7 @@ int main() {
         decode_ins(a[1],b[0]);
 
         update_Execute(c[0], c[1]);
-        execute_ins(a[0],b[1],c[0]);
+        execute_ins(a[1],b[0],b[1],c[0]);
 
         update_MemAccess(d[0], d[1]);
         memAccess_ins(c[1],d[0]);
