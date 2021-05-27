@@ -399,12 +399,13 @@ int execute_ins(struct Fetch_Decode_latch& dout,struct Decode_Execute_latch& din
         din.ReadData1 = in.AluResult;
         if ((din.funct == 0x8) && (din.opcode == 0x0)) pc = in.AluResult; // register jump case update.
         rs_dist = 1;
-        printf("this the end");
+        printf("rs dependency solved\n");
     } 
     if ((out.cs.regWrite == 1) && (out.WriteBackNum == din.rt) && (out.cs.rtUse == 1)) {
         if (din.cs.alusrc == 0) din.ReadData2 = in.AluResult;
         din.MemWriteData = in.AluResult;
         rt_dist = 1;
+        printf("rt dependency solved\n");
     }
 
     printf("alu result: %d memwritedata: %d , writebacknum:%d rs: %d rt: %d pc value: %d \n\n", in.AluResult, in.MemWriteData, in.WriteBackNum, in.rs, in.rt, in.pc_value);
@@ -432,8 +433,8 @@ int memAccess_ins(struct Decode_Execute_latch& din,struct Execute_MemAccess_latc
         return 1;
     }
     in.valid = 1;
-
-    if (in.cs.memWrite == 1) {
+    
+    if (out.cs.memWrite == 1) {
         ch[out.AluResult] = out.MemWriteData;
         n_Mem_ins++;
         printf("changed state -> M[%08x] = %x\n", out.AluResult, out.MemWriteData);
@@ -449,11 +450,13 @@ int memAccess_ins(struct Decode_Execute_latch& din,struct Execute_MemAccess_latc
         din.ReadData1 = in.Data;
         if ((din.funct == 0x8) && (din.opcode == 0x0)) pc = in.Data; // register jump case update.
         rs_dist = 2;
+        printf("rs dependency solved\n");
     }
     if ((out.cs.regWrite == 1) && (out.WriteBackNum == din.rt) && (out.cs.rtUse == 1) && (rt_dist > 1)) {
         if (din.cs.alusrc == 0) din.ReadData2 = in.Data;
         din.MemWriteData = in.Data;
         rt_dist = 2;
+        printf("rt dependency solved\n");
     }
     return 1;
 }
@@ -476,15 +479,15 @@ int writeBack_ins(struct Decode_Execute_latch& din,struct MemAccess_WriteBack_la
     if ((out.cs.regWrite == 1) && (out.WriteBackNum == din.rs) && (out.cs.rsUse == 1) && (rs_dist > 2)) {
         din.ReadData1 = out.Data;
         if ((din.funct == 0x8) && (din.opcode == 0x0)) pc = out.Data; // register jump case update.
+        printf("rs dependency solved\n");
     }
     if ((out.cs.regWrite == 1) && (out.WriteBackNum == din.rt) && (out.cs.rtUse == 1) && (rt_dist > 2)) {
         if (din.cs.alusrc == 0) din.ReadData2 = out.Data;
         din.MemWriteData = out.Data;
+        printf("rt dependency solved\n");
     }
 
-    // data dependency flag 재설정
-    rs_dist = 4;
-    rt_dist = 4;
+   
     return 1;
 }
 
@@ -498,7 +501,7 @@ int main() {
     int keep = 0;
     int clock = 0;
     // 인스트럭션 -> 메모리 입력
-    if ((in = fopen("simple2.bin", "rb")) == NULL) {  // 파일 오픈
+    if ((in = fopen("simple4.bin", "rb")) == NULL) {  // 파일 오픈
         fputs("파일이 존재하지 않습니다", stderr);
         return -1;
     }
@@ -534,6 +537,8 @@ int main() {
         memAccess_ins(b[0],c[1],d[0]);
 
         writeBack_ins(b[0],d[1]);
+        rs_dist = 4;
+        rt_dist = 4;
         printf("%d \n", keep);
       
     } while (keep != 4);
