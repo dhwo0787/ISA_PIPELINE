@@ -662,6 +662,7 @@ int writeBack_ins(struct Decode_Execute_latch& din,struct MemAccess_WriteBack_la
         return 1;
     }
 
+
     if (out.cs.regWrite == 1) {
         R[out.WriteBackNum] = out.Data;
         n_reg++;
