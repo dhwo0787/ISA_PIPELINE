@@ -9,28 +9,30 @@
 unsigned int ch[0x400000]; // BIG MEM 
 unsigned int R[32]; // REG
 int pc = 0; // pc value
-//
+// Jump History
 int JumpLib[100][4]; // [0]: pc , [1]: opcode , [2]: bAddr [3]: JumpCategory 
 int JumpIter = 0;
-//
+// First 변수
 int decode_first = 1;
 int execute_first = 1;
 int memaccess_first = 1;
 int writeback_first = 1;
-//
+// Data Dependency check 변수
 int rs_dist = 4;
 int rt_dist = 4;
-// 
+// 결과값 변수
 int n_ins = 0;
 int n_mem = 0;
 int n_reg = 0;
 int n_jump = 0;
+// Branch 관련 변수
 int n_branch = 0;
 int n_not_taken = 0;
 int n_taken = 0;
 int branchPredict = 0;
 int branchNotPredict = 0;
-//
+int Branch_State = 0; // Branch State Machine 00 -> Strongly taken, 01 -> Weak taken, 10 -> Weak not taken, 11 -> Strongly not taken
+// Struct 모음
 struct control_sig {
     unsigned int aluop;
     unsigned int alusrc;
@@ -78,7 +80,7 @@ struct MemAccess_WriteBack_latch {
     int WriteBackNum;
     struct control_sig cs;
 };
-
+// 함수 모음
 unsigned int cal_opc(unsigned int a) {
     a = a & 0xfc000000;
     a = a >> 26;
@@ -192,7 +194,26 @@ unsigned int op_ALU(unsigned int a, unsigned int b, int c, unsigned int sig) {
         return  0;
     }
 }
-
+void branch_state(int a) { // taken -> a == 1, not taken -> a == 0
+    switch (Branch_State) {
+    case 0b00: if (a == 1) Branch_State = 0b00; // strongly taken+
+             else Branch_State = 0b01; // weak taken
+        break;
+    case 0b01:if (a == 1) Branch_State = 0b00; // strongly taken
+             else Branch_State = 0b10; // weak not taken
+        break;
+    case 0b10:if (a == 1) Branch_State = 0b01; // weak taken
+             else Branch_State = 0b11; // weak not taken
+        break;
+    case 0b11:if (a == 1) Branch_State = 0b10; // weak not taken
+             else Branch_State = 0b11; // weak not taken
+        break;
+    default:
+        printf("error detected -> out of range(Branch_State)");
+        break;
+    }
+}
+// 프로그램 실행 관련 함수
 void init_cpu() {
     pc = 0;
     memset(R, 0x0, sizeof(R));
@@ -242,11 +263,9 @@ int fetch_ins(struct Fetch_Decode_latch& in) {
             case 0 :  // unconditional jump
                 pc = JumpLib[result][2];
                 break;
-            case 1 : // Forward Taken
-                pc = pc + 4; // always not taken
-                break;
-            case 2 : // Backward Taken
-                pc = JumpLib[result][2]; // always taken
+            case 1 : // conditional jump
+            case 2: if ((Branch_State == 0b00) || (Branch_State == 0b01)) pc = JumpLib[result][2]; // predict taken
+                  else if ((Branch_State == 0b10) || (Branch_State == 0b11)) pc = pc + 4; // predict not taken
                 break;
             default: 
                 printf("error is detected -> out of range (JumpLib[%d][3])\n", result);
@@ -542,6 +561,7 @@ int execute_ins(struct Fetch_Decode_latch& dout,struct Decode_Execute_latch& din
                 JumpIter++;
             }
         }
+        branch_state(1);
     }
     else if ((out.cs.branchJ == 1) && (in.AluResult == 0)) {
         if ((in.pc_value + 4) != din.pc_value) {
@@ -584,6 +604,7 @@ int execute_ins(struct Fetch_Decode_latch& dout,struct Decode_Execute_latch& din
             }
         }
         n_not_taken++;
+        branch_state(0);
     }
     
     // data dependency check
@@ -654,7 +675,6 @@ int memAccess_ins(struct Decode_Execute_latch& din,struct Execute_MemAccess_latc
     }
     return 1;
 }
-
 int writeBack_ins(struct Decode_Execute_latch& din,struct MemAccess_WriteBack_latch& out) {
     out.valid = 1;
     if (writeback_first == 1) {
@@ -744,8 +764,8 @@ int main() {
         rs_dist = 4;
         rt_dist = 4;
         printf("%d \n", keep);
-        printf("---------------------------------");
-        printf("---------------------------------");
+        printf("---------------------------------\n");
+        printf("---------------------------------\n");
     } while (keep != 2);
     end = clock();
 
